@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="./libs/d3.js"></script>
+    <script src="libs/d3jstopojson.v1.js"></script>
+    <title>MA Map</title>
+    <style>
+
+        body {
+            background-color: antiquewhite;
+        }
+
+        h1 {
+            font-size: 48pt;
+        }
+
+        h3 {
+            font-size: 24pt;
+        }
+
+        #tooltip {
+            position: absolute;
+            opacity: 0;
+            top: 0;
+            left: 0;
+            width: auto;
+            padding: 10px;
+            background: white;
+            font-family: sans-serif;
+            font-size: medium;
+            border-radius: 2px;
+            line-height: 1;
+        }
+        
+        path {
+            stroke-width: .5px;
+            stroke: black
+        }
+        
+        path:hover {
+            opacity: .6;
+            stroke: black;
+            stroke-width: 4px;
+        }
+
+        .container{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .caption{
+            font-family: sans-serif;
+            margin: auto;
+            font-size: 24pt;
+            padding-top: 3%;
+            color: brown
+        }
+
+        .subcaption{
+            font-family: sans-serif;
+            margin: auto;
+            font-size: 18pt;
+            color: brown
+        }
+
+        table {
+            border-collapse: collapse;
+            border: 2px solid black
+        }
+
+        th, td {
+            border: 1px solid grey;
+            padding: 8px;
+            text-align: center
+        }
+
+        .giniLine {
+            stroke: red;
+            stroke-width: 2px;
+            fill: none;
+        }
+
+        #rowf {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+        }
+
+    </style>
+
+</head>
+
+<body>
+    <div id="tooltip"></div>
+    <div class="container">
+        <h1>Massachusetts Population</h1>
+        <h3>Ryan Berry</h3>
+        <div class="caption">Population by Town</div>
+        <div class="subcaption">1980</div>
+        <div class="fig1"></div>
+        <div class="caption">Change in Population by Town</div>
+        <div class="subcaption">1980 - 2010</div>
+        <div class="fig2"></div>
+        <div class="caption">Gini Index Rating by County</div>
+        <div class="subcaption">2019</div>
+        <div class="fig3"></div>
+
+
+    </div>
+
+    <script>
+        /*-------------------------------------------------------*/
+        /*------------------- Window setting --------------------*/
+        /*-------------------------------------------------------*/
+        // dimension of the page
+        const window_dims = {
+            width: window.innerWidth,
+            height: window.innerHeight
+        };
+
+
+        const svgWidth = window_dims.width/2;
+        const svgHeight = window_dims.width/3;
+        // Append an SVG element to body, then append a path for the boundaries
+        
+
+
+
+        /*-------------------------------------------------------*/
+        /*-----------------parallel load data--------------------*/
+        /*-------------------------------------------------------*/
+
+        // a topojson file containing population of each town in different years
+        const MA_counties = "./data/towns.topojson"
+            // gini index per county
+        const gini_index = "./data/gini_index.csv"
+
+
+
+        // open both files
+        Promise.all([
+            d3.json(MA_counties),
+            d3.csv(gini_index)
+        ]).then(data =>
+        {
+            // topology data
+            const topology_data = data[0];
+            // gini index data
+            const csv_data = data[1];
+
+            /*-------------------------------------------------------*/
+            /*----------------Generate Map 1 Function----------------*/
+            /*-------------------------------------------------------*/
+
+            const generateMap1 = (topo_data,containerName,width,height,margin=30)=> {
+                const svg1 = d3.select(containerName).append("svg")
+                    .attr("width", width)
+                    .attr("height", height);
+
+            /*-------------------------------------------------------*/
+            /*-----------------Topojson data handling----------------*/
+            /*-------------------------------------------------------*/
+            // if topojson file is imported we need to 
+            // convert topology data to geojson 
+            const geojson1 = topojson.feature(topo_data, topo_data.objects.ma);
+
+            /*-------------------------------------------------------*/
+            /*----------------------Projections----------------------*/
+            /*-------------------------------------------------------*/
+            const projections1 = [
+                d3.geoAzimuthalEqualArea(), //Azimuthal projections project the sphere directly onto a plane.
+                d3.geoAlbersUsa(), // USA conic projection
+                d3.geoAlbers(), // equal-area conic projection
+                d3.geoMercator(), // cylindrical projection
+                d3.geoNaturalEarth1(), // pseudocylindrical projection designed by Tom Patterson
+                d3.geoEqualEarth(), // Equal Earth projection, by Bojan Šavrič et al., 2018.
+                d3.geoConicEqualArea(), //equal-area conic projection
+                d3.geoEquirectangular(), //Cylindrical Projections
+                d3.geoOrthographic()
+            ]
+            /*-------------------------------------------------------*/
+            /*----------------geoPath generator----------------------*/
+            /*-------------------------------------------------------*/
+
+            const geoPath_generator1 = d3.geoPath()
+                .projection(projections1[3].fitSize([width-margin,height-margin], geojson1))
+            /*-------------------------------------------------------*/
+            /*----------------------Color Scaling--------------------*/
+            /*-------------------------------------------------------*/
+            //https://observablehq.com/@d3/working-with-color
+            //https://colorbrewer2.org/#type=diverging&scheme=RdYlBu&n=6
+            const colorInterpolator1 = d3.interpolateRgbBasis(['#d73027','#fc8d59','#fee090','#e0f3f8','#91bfdb','#4575b4'].reverse())
+                // if the data is scaled using log scale
+            const logScale1 = d3.scaleLog()
+                .domain(d3.extent(geojson1.features, (d) => {
+                    return d['properties']['POP1980']
+                }))
+            // if the data is scaled using linear scale
+            const linearScale1 = d3.scaleLinear()
+                .domain(d3.extent(geojson1.features, (d) => {
+                    return d['properties']['POP1980']
+                }))
+            /*-------------------------------------------------------*/
+            /*---------------------- Tooltip ------------------------*/
+            /*-------------------------------------------------------*/
+            const tooltip1 = d3.select("#tooltip");
+            /*--------------------------------------------------------*/
+            /*----------------- channelling marks --------------------*/
+            /*--------------------------------------------------------*/
+
+            svg1.selectAll("path")
+                .data(geojson1.features)
+                .enter()
+                .append("path")
+                .attr("d", d => geoPath_generator1(d))
+                .attr("fill", d => colorInterpolator1(logScale1(d['properties']['POP1980'])))
+                //.attr("fill", d => colorInterpolator1(linearScale1(d['properties']['POP1980'])))
+                .on("mouseenter", (m, d) => {
+                    tooltip1.transition()
+                        .duration(200)
+                        .style("opacity", .9)
+                    tooltip1.html("<strong>Town: </strong>" + d['properties']['TOWN'] + "<br>" + "<strong>Population: </strong>" + d['properties']['POP1980'] + " People")
+                        .style("left", (m.clientX + 20) + "px")
+                        .style("top", (m.clientY + window.scrollY) + "px");
+                })
+                .on("mousemove", (m, d) => {
+                    tooltip1.style("opacity", .9)
+                        .style("left", (m.clientX + 20) + "px")
+                        .style("top", (m.clientY + window.scrollY) + "px");
+                })
+                .on("mouseout", (m, d) => {
+                    tooltip1.transition()
+                        .duration(400)
+                        .style("opacity", 0)
+                })
+
+            }
+
+            /*-------------------------------------------------------*/
+            /*----------------Generate Map 2 Function----------------*/
+            /*-------------------------------------------------------*/
+
+            const generateMap2 = (topo_data,containerName,width,height,margin=30)=> {
+                const svg = d3.select(containerName).append("svg")
+                    .attr("width", width)
+                    .attr("height", height);
+
+            /*-------------------------------------------------------*/
+            /*-----------------Topojson data handling----------------*/
+            /*-------------------------------------------------------*/
+            // if topojson file is imported we need to 
+            // convert topology data to geojson 
+            const geojson = topojson.feature(topo_data, topo_data.objects.ma);
+
+            /*-------------------------------------------------------*/
+            /*----------------------Projections----------------------*/
+            /*-------------------------------------------------------*/
+            const projections = [
+                d3.geoAzimuthalEqualArea(), //Azimuthal projections project the sphere directly onto a plane.
+                d3.geoAlbersUsa(), // USA conic projection
+                d3.geoAlbers(), // equal-area conic projection
+                d3.geoMercator(), // cylindrical projection
+                d3.geoNaturalEarth1(), // pseudocylindrical projection designed by Tom Patterson
+                d3.geoEqualEarth(), // Equal Earth projection, by Bojan Šavrič et al., 2018.
+                d3.geoConicEqualArea(), //equal-area conic projection
+                d3.geoEquirectangular(), //Cylindrical Projections
+                d3.geoOrthographic()
+            ]
+            /*-------------------------------------------------------*/
+            /*----------------geoPath generator----------------------*/
+            /*-------------------------------------------------------*/
+
+            const geoPath_generator = d3.geoPath()
+                .projection(projections[3].fitSize([width-margin,height-margin], geojson))
+            /*-------------------------------------------------------*/
+            /*----------------------Color Scaling--------------------*/
+            /*-------------------------------------------------------*/
+            //https://observablehq.com/@d3/working-with-color
+            //https://colorbrewer2.org/#type=diverging&scheme=RdYlBu&n=6
+            const colorInterpolator = d3.interpolateRgbBasis(['#d73027','#fc8d59','#fee090','#e0f3f8','#91bfdb','#4575b4'].reverse())
+                // if the data is scaled using log scale
+            const logScale = d3.scaleLog()
+                .domain(d3.extent(geojson.features, (d) => {
+                    return d['properties']['POP2010'] - d['properties']['POP1980'] + 10000
+                }))
+            // if the data is scaled using linear scale
+            const linearScale = d3.scaleLinear()
+                .domain(d3.extent(geojson.features, (d) => {
+                    return d['properties']['POP2010'] - d['properties']['POP1980']
+                }))
+            /*-------------------------------------------------------*/
+            /*---------------------- Tooltip ------------------------*/
+            /*-------------------------------------------------------*/
+            const tooltip = d3.select("#tooltip");
+            /*--------------------------------------------------------*/
+            /*----------------- channelling marks --------------------*/
+            /*--------------------------------------------------------*/
+
+            svg.selectAll("path")
+                .data(geojson.features)
+                .enter()
+                .append("path")
+                .attr("d", d => geoPath_generator(d))
+                .attr("fill", d => colorInterpolator(logScale(d['properties']['POP2010'] - d['properties']['POP1980'] + 10000)))
+                //.attr("fill", d => colorInterpolator(linearScale(d['properties']['POP2010'] - d['properties']['POP1980'])))
+                .on("mouseenter", (m, d) => {
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9)
+                    tooltip.html("<strong>Town: </strong>" + d['properties']['TOWN'] + "<br>" + "<strong>Population: </strong>" + (d['properties']['POP2010'] - d['properties']['POP1980'])+ " People")
+                        .style("left", (m.clientX + 20) + "px")
+                        .style("top", (m.clientY + window.scrollY) + "px");
+                })
+                .on("mousemove", (m, d) => {
+                    tooltip.style("opacity", .9)
+                        .style("left", (m.clientX + 20) + "px")
+                        .style("top", (m.clientY + window.scrollY) + "px");
+                })
+                .on("mouseout", (m, d) => {
+                    tooltip.transition()
+                        .duration(400)
+                        .style("opacity", 0)
+                })
+
+            }
+
+            /*-------------------------------------------------------*/
+            /*----------------Generate Map 3 Function----------------*/
+            /*-------------------------------------------------------*/
+
+            const generateMap3 = (topo_data,containerName,width,height,margin=30)=> {
+                const svg = d3.select(containerName).append("svg")
+                    .attr("width", width)
+                    .attr("height", height);
+
+            /*-------------------------------------------------------*/
+            /*-----------------Topojson data handling----------------*/
+            /*-------------------------------------------------------*/
+            // if topojson file is imported we need to 
+            // convert topology data to geojson 
+            const geojson = topojson.feature(topo_data, topo_data.objects.ma);
+
+            /*-------------------------------------------------------*/
+            /*----------------------Projections----------------------*/
+            /*-------------------------------------------------------*/
+            const projections = [
+                d3.geoAzimuthalEqualArea(), //Azimuthal projections project the sphere directly onto a plane.
+                d3.geoAlbersUsa(), // USA conic projection
+                d3.geoAlbers(), // equal-area conic projection
+                d3.geoMercator(), // cylindrical projection
+                d3.geoNaturalEarth1(), // pseudocylindrical projection designed by Tom Patterson
+                d3.geoEqualEarth(), // Equal Earth projection, by Bojan Šavrič et al., 2018.
+                d3.geoConicEqualArea(), //equal-area conic projection
+                d3.geoEquirectangular(), //Cylindrical Projections
+                d3.geoOrthographic()
+            ]
+            /*-------------------------------------------------------*/
+            /*----------------geoPath generator----------------------*/
+            /*-------------------------------------------------------*/
+
+            const geoPath_generator = d3.geoPath()
+                .projection(projections[3].fitSize([width-margin,height-margin], geojson))
+
+
+            const fips = [
+                {"county": "Barnstable County", "fips_code": 25001},
+                {"county": "Berkshire County", "fips_code": 25003},
+                {"county": "Bristol County", "fips_code": 25005},
+                {"county": "Dukes County", "fips_code": 25007},
+                {"county": "Essex County", "fips_code": 25009},
+                {"county": "Franklin County", "fips_code": 25011},
+                {"county": "Hampden County", "fips_code": 25013},
+                {"county": "Hampshire County", "fips_code": 25015},
+                {"county": "Middlesex County", "fips_code": 25017},
+                {"county": "Nantucket County", "fips_code": 25019},
+                {"county": "Norfolk County", "fips_code": 25021},
+                {"county": "Plymouth County", "fips_code": 25023},
+                {"county": "Suffolk County", "fips_code": 25025},
+                {"county": "Worcester County", "fips_code": 25027}
+            ]
+
+            var county = '';
+            const feats = geojson.features;
+            feats.forEach(d => {
+
+                fips.forEach(r => {
+                    if(r.fips_code === d.properties.FIPS_STCO) {
+                        county = r.county;
+                        d.properties.county = county;
+                    }
+                })
+
+                csv_data.forEach(r => {
+                    if (r['Geographic Area Name'].slice(0, -15) === county) {
+                        if (r.year === '2010') {d.properties.gini0 = parseFloat(r["Estimate!!Gini Index"])}
+                        if (r.year === '2011') {d.properties.gini1 = parseFloat(r["Estimate!!Gini Index"])}
+                        if (r.year === '2012') {d.properties.gini2 = parseFloat(r["Estimate!!Gini Index"])}
+                        if (r.year === '2013') {d.properties.gini3 = parseFloat(r["Estimate!!Gini Index"])}
+                        if (r.year === '2014') {d.properties.gini4 = parseFloat(r["Estimate!!Gini Index"])}
+                        if (r.year === '2015') {d.properties.gini5 = parseFloat(r["Estimate!!Gini Index"])}
+                        if (r.year === '2016') {d.properties.gini6 = parseFloat(r["Estimate!!Gini Index"])}
+                        if (r.year === '2017') {d.properties.gini7 = parseFloat(r["Estimate!!Gini Index"])}
+                        if (r.year === '2018') {d.properties.gini8 = parseFloat(r["Estimate!!Gini Index"])}
+                        if (r.year === '2019') {d.properties.gini9 = parseFloat(r["Estimate!!Gini Index"])}
+                    }
+                })
+            });
+
+
+            const makeGraph = (d) => {
+                const width  = 350;
+                const height = 350;
+                const margin = { top: 10, right: 10, bottom: 20, left: 50 };
+                const innerW = width  - margin.left - margin.right;
+                const innerH = height - margin.top  - margin.bottom;
+                var list = [
+                    {Year: new Date(2010, 0, 1), Gini: d.properties.gini0},
+                    {Year: new Date(2011, 0, 1), Gini: d.properties.gini1},
+                    {Year: new Date(2012, 0, 1), Gini: d.properties.gini2},
+                    {Year: new Date(2013, 0, 1), Gini: d.properties.gini3},
+                    {Year: new Date(2014, 0, 1), Gini: d.properties.gini4},
+                    {Year: new Date(2015, 0, 1), Gini: d.properties.gini5},
+                    {Year: new Date(2016, 0, 1), Gini: d.properties.gini6},
+                    {Year: new Date(2017, 0, 1), Gini: d.properties.gini7},
+                    {Year: new Date(2018, 0, 1), Gini: d.properties.gini8},
+                    {Year: new Date(2019, 0, 1), Gini: d.properties.gini9}
+                ];
+
+                const ttsvg = d3.select("#toolsvg")
+                    .attr("width", width)
+                    .attr("height", height);
+
+                ttsvg.selectAll("*").remove();
+
+                var yScale = d3.scaleLinear()
+                    .domain(d3.extent(list, c=> c.Gini))
+                    .range([innerH, 0]);
+
+                var xScale = d3.scaleTime()
+                    .domain(d3.extent(list, c => c.Year))
+                    .range([0, innerW]);
+
+                var giniLine = d3.line()
+                    .x(c=> xScale(c.Year))
+                    .y(c => yScale(c.Gini))
+                    .curve(d3.curveBasis);
+
+                const chart = ttsvg.append("g")
+                    .attr("transform", `translate(${margin.left},${margin.top})`);
+                
+                chart.append("path")
+                    .datum(list)
+                    .attr("class", "giniLine")
+                    .attr("d", giniLine)
+
+                chart.append("g")
+                    .attr("class", "yLeft")
+                    .call(d3.axisLeft(yScale).ticks(5))
+
+                chart.append("g")
+                    .attr("class", "xBottom")
+                    .attr("transform", `translate(0,${innerH})`)
+                    .call(d3.axisBottom(xScale).ticks(3))
+
+                
+            }
+            
+            /*-------------------------------------------------------*/
+            /*----------------------Color Scaling--------------------*/
+            /*-------------------------------------------------------*/
+            //https://observablehq.com/@d3/working-with-color
+            //https://colorbrewer2.org/#type=diverging&scheme=RdYlBu&n=6
+            const colorInterpolator = d3.interpolateRgbBasis(['#d73027','#fc8d59','#fee090','#e0f3f8','#91bfdb','#4575b4'].reverse())
+                // if the data is scaled using log scale
+            const logScale = d3.scaleLog()
+                .domain(d3.extent(geojson.features, (d) => {
+                    return d.properties.gini9
+                }))
+            // if the data is scaled using linear scale
+            const linearScale = d3.scaleLinear()
+                .domain(d3.extent(geojson.features, (d) => {
+                    return d.properties.gini9
+                }))
+            /*-------------------------------------------------------*/
+            /*---------------------- Tooltip ------------------------*/
+            /*-------------------------------------------------------*/
+            const tooltip3 = d3.select("#tooltip");
+            /*--------------------------------------------------------*/
+            /*----------------- channelling marks --------------------*/
+            /*--------------------------------------------------------*/
+
+            svg.selectAll("path")
+                .data(geojson.features)
+                .enter()
+                .append("path")
+                .attr("d", d => geoPath_generator(d))
+                //.attr("fill", d => colorInterpolator(logScale(d.properties.gini9)))
+                .attr("fill", d => colorInterpolator(linearScale(d.properties.gini9)))
+                .on("mouseenter", (m, d) => {
+                    tooltip3.transition()
+                        .duration(200)
+                        .style("opacity", .9)
+                    tooltip3.html("<strong>Town: </strong>" + d['properties']['TOWN'] + "<br>"
+                        + "<strong>County: </strong>" + d.properties.county + "<br><br>"
+                        + "<div id='rowf'><table><tr><th>Year</th><th>Gini Index</th></tr>"
+                        + "<tr><td>2010</td><td>" + d.properties.gini0 + "</td></tr>"
+                        + "<tr><td>2011</td><td>" + d.properties.gini1 + "</td></tr>"
+                        + "<tr><td>2012</td><td>" + d.properties.gini2 + "</td></tr>"
+                        + "<tr><td>2013</td><td>" + d.properties.gini3 + "</td></tr>"
+                        + "<tr><td>2014</td><td>" + d.properties.gini4 + "</td></tr>"
+                        + "<tr><td>2015</td><td>" + d.properties.gini5 + "</td></tr>"
+                        + "<tr><td>2016</td><td>" + d.properties.gini6 + "</td></tr>"
+                        + "<tr><td>2017</td><td>" + d.properties.gini7 + "</td></tr>"
+                        + "<tr><td>2018</td><td>" + d.properties.gini8 + "</td></tr>"
+                        + "<tr><td>2019</td><td>" + d.properties.gini9 + "</td></tr></table>"
+                        + "<svg id='toolsvg'></svg></div>")
+                        .style("left", (m.clientX + 20) + "px")
+                        .style("top", (m.clientY + window.scrollY - 450) + "px");
+
+                        makeGraph(d);
+                })
+                .on("mousemove", (m, d) => {
+                    tooltip3.style("opacity", .9)
+                        .style("left", (m.clientX + 20) + "px")
+                        .style("top", (m.clientY + window.scrollY - 450) + "px");
+                })
+                .on("mouseout", (m, d) => {
+                    tooltip3.transition()
+                        .duration(400)
+                        .style("opacity", 0)
+                })
+
+            }
+            generateMap1(topology_data,".fig1",svgWidth,svgHeight)
+            generateMap2(topology_data,".fig2",svgWidth,svgHeight)
+            generateMap3(topology_data,".fig3",svgWidth,svgHeight)
+        })
+
+
+
+
+        app.get('/api/books/:isbn', (req,resp) => {
+            // use mongoose to retrieve all books from Mongo
+            Book.find({isbn10: req.params.isbn},
+                function(err, data) {
+                    if (err) {
+                        resp.json({ message: 'Book not found' });
+                    } else {
+                        resp.json(data);
+                    }
+                });
+        });
+
+
+
+
+    </script>
+</body>
+
+</html>
