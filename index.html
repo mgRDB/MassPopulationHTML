@@ -313,7 +313,7 @@
                     tooltip.transition()
                         .duration(200)
                         .style("opacity", .9)
-                    tooltip.html("<strong>Town: </strong>" + d['properties']['TOWN'] + "<br>" + "<strong>Population: </strong>" + (d['properties']['POP2010'] - d['properties']['POP1980'])+ " People")
+                    tooltip.html("<strong>Town: </strong>" + d['properties']['TOWN'] + "<br>" + "<strong>Change in Population: </strong>" + (d['properties']['POP2010'] - d['properties']['POP1980'])+ " People")
                         .style("left", (m.clientX + 20) + "px")
                         .style("top", (m.clientY + window.scrollY) + "px");
                 })
